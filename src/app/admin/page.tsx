@@ -197,24 +197,63 @@ export default function AdminPage() {
   };
 
   const googleAppsScriptCode = `// Google Apps Script для автоматической записи ответов девушки в таблицу
+function doGet(e) {
+  return handleRequest(e);
+}
+
 function doPost(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = JSON.parse(e.postData.contents);
-  
-  // Добавляем новую строку со всеми выборами
-  sheet.appendRow([
-    new Date(),
-    data.partnerName || 'Девушка',
-    data.selectedDate || '',
-    data.selectedTime || '',
-    data.selectedActivity || '',
-    data.selectedFood || '',
-    data.customNotes || '',
-    data.favoriteSong || ''
-  ]);
-  
-  return ContentService.createTextOutput(JSON.stringify({ status: 'success' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return handleRequest(e);
+}
+
+function handleRequest(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    
+    // Если таблица пустая, автоматически создаем красивые заголовки колонок
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow([
+        'Время отправки',
+        'Имя',
+        'Выбранная дата',
+        'Время встречи',
+        'Куда пойдем (Формат)',
+        'Что будем кушать (Еда)',
+        'Особые пожелания',
+        'Любимый трек'
+      ]);
+      // Выделяем шапку жирным шрифтом
+      sheet.getRange(1, 1, 1, 8).setFontWeight('bold').setBackground('#ffe4e6');
+    }
+
+    var data = {};
+    if (e && e.postData && e.postData.contents) {
+      try {
+        data = JSON.parse(e.postData.contents);
+      } catch (err) {
+        data = e.parameter || {};
+      }
+    } else if (e && e.parameter) {
+      data = e.parameter;
+    }
+
+    // Добавляем строку с ответами девушки
+    sheet.appendRow([
+      new Date().toLocaleString('ru-RU'),
+      data.partnerName || 'Моя прекрасная',
+      data.selectedDate || '',
+      data.selectedTime || '',
+      data.selectedActivity || '',
+      data.selectedFood || '',
+      data.customNotes || '',
+      data.favoriteSong || ''
+    ]);
+
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Записано в таблицу!' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
 }`;
 
   const copyScriptToClipboard = () => {
@@ -573,14 +612,22 @@ function doPost(e) {
                 <li>
                   В правом верхнем углу Apps Script нажмите <b>Развернуть (Deploy)</b> → <b>Новое развертывание (New deployment)</b>.
                 </li>
-                <li>Выберите тип: <b>Веб-приложение (Web app)</b>.</li>
-                <li>
-                  Установите доступ: <b>Кто имеет доступ (Who has access) → Все (Anyone)</b>.
+                <li>Выберите тип (шестеренка ⚙️): <b>Веб-приложение (Web app)</b>.</li>
+                <li className="text-amber-300 font-semibold bg-amber-500/10 p-2 rounded-lg border border-amber-500/30">
+                  ⚠️ КРИТИЧЕСКИ ВАЖНО: В поле <u>Кто имеет доступ (Who has access)</u> выберите <b>«Все» (Anyone)</b>! Если оставить «Только я», Google вернет ошибку 401.
                 </li>
                 <li>
-                  Нажмите <b>Развернуть</b>, скопируйте полученный <b>URL веб-приложения</b> и вставьте в поле выше!
+                  В поле <u>Запуск от имени (Execute as)</u> оставьте <b>«Я» (Me)</b>.
+                </li>
+                <li>
+                  Нажмите <b>Развернуть</b>, скопируйте полученный <b>URL веб-приложения</b> (заканчивается на <code>/exec</code>) и вставьте в поле выше!
                 </li>
               </ol>
+
+              <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 text-[11px] text-slate-400">
+                💡 <b>Если вы уже развернули скрипт с «Только я»:</b><br />
+                Нажмите <b>Развернуть</b> → <b>Управление развертываниями (Manage deployments)</b> → значок карандаша ✏️ (Редактировать) → измените доступ на <b>«Все» (Anyone)</b> → выберите версию <b>«Новая версия»</b> → нажмите <b>Развернуть</b>.
+              </div>
             </div>
           </div>
         )}

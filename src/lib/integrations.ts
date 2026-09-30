@@ -5,38 +5,61 @@ export async function forwardToGoogleSheets(
   webhookUrl: string
 ): Promise<{ success: boolean; error?: string }> {
   if (!webhookUrl || !webhookUrl.startsWith('http')) {
-    return { success: false, error: 'Webhook URL not set' };
+    return { success: false, error: 'URL вебхука не указан или некорректен' };
   }
 
   try {
-    const response = await fetch(webhookUrl, {
+    const payload = {
+      timestamp: submission.submittedAt,
+      partnerName: submission.partnerName,
+      selectedDate: submission.selectedDate,
+      selectedTime: submission.selectedTime,
+      selectedActivity: submission.selectedActivity,
+      selectedFood: submission.selectedFood,
+      customNotes: submission.customNotes || '',
+      favoriteSong: submission.favoriteSong || '',
+    };
+
+    // Build URL with query params as fallback in case 302 redirect drops POST body
+    const urlObj = new URL(webhookUrl);
+    Object.entries(payload).forEach(([key, value]) => {
+      urlObj.searchParams.set(key, String(value));
+    });
+
+    // Send request with both URL params and body (text/plain to prevent CORS preflight & body drops)
+    const response = await fetch(urlObj.toString(), {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'text/plain;charset=utf-8',
       },
-      body: JSON.stringify({
-        timestamp: submission.submittedAt,
-        partnerName: submission.partnerName,
-        selectedDate: submission.selectedDate,
-        selectedTime: submission.selectedTime,
-        selectedActivity: submission.selectedActivity,
-        selectedFood: submission.selectedFood,
-        customNotes: submission.customNotes || '',
-        favoriteSong: submission.favoriteSong || '',
-      }),
-      // Apps Script redirects, follow them
+      body: JSON.stringify(payload),
       redirect: 'follow',
     });
 
+    if (response.status === 401) {
+      return {
+        success: false,
+        error: 'Ошибка 401: в Google Apps Script в поле «Кто имеет доступ» (Who has access) выбрано «Только я». Нужно выбрать «Все» (Anyone) и сделать новое развертывание!',
+      };
+    }
+
     if (response.ok) {
+      const text = await response.text();
+      // Google sometimes returns HTML login page even with 200 if redirected
+      if (text.includes('accounts.google.com') || text.includes('ServiceLogin')) {
+        return {
+          success: false,
+          error: 'Google требует вход в аккаунт! В развертывании Apps Script в пункте «Кто имеет доступ» обязательно выберите «Все» (Anyone).',
+        };
+      }
       return { success: true };
     } else {
       const text = await response.text();
-      return { success: false, error: `Google Sheets returned ${response.status}: ${text}` };
+      return { success: false, error: `Google вернул код ${response.status}: ${text.substring(0, 100)}` };
     }
   } catch (err: any) {
     console.error('Failed to forward to Google Sheets:', err);
-    return { success: false, error: err.message || 'Network error' };
+    return { success: false, error: err.message || 'Ошибка сети' };
   }
 }
 

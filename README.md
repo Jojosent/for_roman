@@ -85,32 +85,73 @@ npx vercel
 3. Замените весь код на следующий:
 
 ```javascript
+// Google Apps Script для автоматической записи ответов девушки в таблицу
+function doGet(e) {
+  return handleRequest(e);
+}
+
 function doPost(e) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = JSON.parse(e.postData.contents);
-  
-  sheet.appendRow([
-    new Date(),
-    data.partnerName || 'Девушка',
-    data.selectedDate || '',
-    data.selectedTime || '',
-    data.selectedActivity || '',
-    data.selectedFood || '',
-    data.customNotes || '',
-    data.favoriteSong || ''
-  ]);
-  
-  return ContentService.createTextOutput(JSON.stringify({ status: 'success' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return handleRequest(e);
+}
+
+function handleRequest(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    
+    // Если таблица пустая, автоматически создаем красивые заголовки колонок
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow([
+        'Время отправки',
+        'Имя',
+        'Выбранная дата',
+        'Время встречи',
+        'Куда пойдем (Формат)',
+        'Что будем кушать (Еда)',
+        'Особые пожелания',
+        'Любимый трек'
+      ]);
+      sheet.getRange(1, 1, 1, 8).setFontWeight('bold').setBackground('#ffe4e6');
+    }
+
+    var data = {};
+    if (e && e.postData && e.postData.contents) {
+      try {
+        data = JSON.parse(e.postData.contents);
+      } catch (err) {
+        data = e.parameter || {};
+      }
+    } else if (e && e.parameter) {
+      data = e.parameter;
+    }
+
+    // Добавляем новую строку со всеми выборами
+    sheet.appendRow([
+      new Date().toLocaleString('ru-RU'),
+      data.partnerName || 'Моя прекрасная',
+      data.selectedDate || '',
+      data.selectedTime || '',
+      data.selectedActivity || '',
+      data.selectedFood || '',
+      data.customNotes || '',
+      data.favoriteSong || ''
+    ]);
+
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success' }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
 }
 ```
 
 4. Справа сверху нажмите **Развернуть (Deploy)** → **Новое развертывание (New deployment)**.
-5. Выберите тип: **Веб-приложение (Web app)**.
-6. В пункте **Кто имеет доступ (Who has access)** выберите: **Все (Anyone)**.
-7. Нажмите **Развернуть (Deploy)** и скопируйте **URL веб-приложения**.
-8. Перейдите в `/admin` на вашем сайте (PIN: `2024`), во вкладке **Google Таблицы** вставьте этот URL и нажмите **Сохранить URL**!
-9. Нажмите кнопку **⚡ Отправить тестовую запись в таблицу**, чтобы убедиться, что строка появилась в таблице.
+5. Выберите тип (шестеренка ⚙️): **Веб-приложение (Web app)**.
+6. ⚠️ **КРИТИЧЕСКИ ВАЖНО:** В пункте **Кто имеет доступ (Who has access)** выберите: **Все (Anyone)** (не «Только я»!).
+7. В пункте **Запуск от имени (Execute as)** выберите: **Я (Me)**.
+8. Нажмите **Развернуть (Deploy)** и скопируйте выданный **URL веб-приложения** (заканчивается на `/exec`).
+9. Перейдите в `/admin` на вашем сайте (PIN: `2024`), во вкладке **Google Таблицы** вставьте этот URL и нажмите **Сохранить URL**!
+10. Нажмите кнопку **⚡ Отправить тестовую запись в таблицу** — и строка сразу появится в вашей Google Таблице!
 
 ---
 
