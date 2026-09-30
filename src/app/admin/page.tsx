@@ -17,9 +17,15 @@ import {
   ExternalLink,
   Heart,
   Settings,
-  ListOrdered
+  ListOrdered,
+  Image as ImageIcon,
+  Shuffle,
+  Upload,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
 } from 'lucide-react';
-import { AppConfig, DateSubmission, DEFAULT_CONFIG } from '@/lib/types';
+import { AppConfig, DateSubmission, DEFAULT_CONFIG, PhotoItem } from '@/lib/types';
 
 export default function AdminPage() {
   const [pin, setPin] = useState('');
@@ -30,7 +36,10 @@ export default function AdminPage() {
   // Admin Data
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [submissions, setSubmissions] = useState<DateSubmission[]>([]);
-  const [activeTab, setActiveTab] = useState<'datetime' | 'google' | 'answers' | 'settings'>('datetime');
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [shuffling, setShuffling] = useState(false);
+  const [activeTab, setActiveTab] = useState<'datetime' | 'photos' | 'google' | 'answers' | 'settings'>('datetime');
 
   // New Date / Time inputs
   const [newDateInput, setNewDateInput] = useState('');
@@ -63,6 +72,7 @@ export default function AdminPage() {
         setSubmissions(data.submissions || []);
         setIsAuthenticated(true);
         localStorage.setItem('admin_pin', pinToUse);
+        fetchPhotos();
       } else {
         setIsAuthenticated(false);
         setAuthError('Неверный PIN-код. Попробуйте еще раз.');
@@ -72,6 +82,114 @@ export default function AdminPage() {
       setAuthError('Ошибка подключения к серверу.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPhotos = async () => {
+    try {
+      const res = await fetch('/api/photos');
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.photos)) {
+          setPhotos(data.photos);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching photos:', err);
+    }
+  };
+
+  const handleUploadPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        formData.append('files', files[i]);
+      }
+      const res = await fetch(`/api/photos/upload?pin=${encodeURIComponent(pin)}`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        await fetchPhotos();
+        alert(data.message || 'Фото успешно загружены!');
+      } else {
+        alert(`Ошибка: ${data.error || 'Не удалось загрузить фото'}`);
+      }
+    } catch (err: any) {
+      alert(`Ошибка загрузки: ${err.message}`);
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleShufflePhotos = async () => {
+    setShuffling(true);
+    try {
+      const res = await fetch(`/api/photos?pin=${encodeURIComponent(pin)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'shuffle' }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPhotos(data.photos);
+      }
+    } catch (err) {
+      alert('Ошибка при перемешивании фото');
+    } finally {
+      setShuffling(false);
+    }
+  };
+
+  const handleDeletePhoto = async (id: string) => {
+    if (!confirm('Вы точно хотите удалить эту фотографию из галереи?')) return;
+    try {
+      const res = await fetch(`/api/photos?id=${encodeURIComponent(id)}&pin=${encodeURIComponent(pin)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPhotos(data.photos);
+      }
+    } catch (err) {
+      alert('Ошибка при удалении фото');
+    }
+  };
+
+  const handleMovePhoto = async (index: number, direction: 'left' | 'right') => {
+    const targetIndex = direction === 'left' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= photos.length) return;
+    const newPhotos = [...photos];
+    const temp = newPhotos[index];
+    newPhotos[index] = newPhotos[targetIndex];
+    newPhotos[targetIndex] = temp;
+    setPhotos(newPhotos);
+    try {
+      await fetch(`/api/photos?pin=${encodeURIComponent(pin)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reorder', photos: newPhotos }),
+      });
+    } catch (err) {
+      console.error('Failed to save reordered photos', err);
+    }
+  };
+
+  const handleUpdateCaption = async (id: string, caption: string) => {
+    setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, caption } : p)));
+    try {
+      await fetch(`/api/photos?pin=${encodeURIComponent(pin)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'updateCaption', id, caption }),
+      });
+    } catch (err) {
+      console.error('Failed to update caption', err);
     }
   };
 
@@ -380,6 +498,18 @@ function handleRequest(e) {
           </button>
 
           <button
+            onClick={() => setActiveTab('photos')}
+            className={`px-4 py-2.5 rounded-xl font-medium text-xs sm:text-sm flex items-center gap-2 transition-all ${
+              activeTab === 'photos'
+                ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25'
+                : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <ImageIcon className="w-4 h-4" />
+            <span>Фотографии ({photos.length})</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('google')}
             className={`px-4 py-2.5 rounded-xl font-medium text-xs sm:text-sm flex items-center gap-2 transition-all ${
               activeTab === 'google'
@@ -512,6 +642,178 @@ function handleRequest(e) {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* TAB: PHOTOS MANAGEMENT */}
+        {activeTab === 'photos' && (
+          <div className="bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-800 space-y-6">
+            {/* Top Toolbar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+              <div>
+                <div className="flex items-center gap-2 text-rose-400 font-bold text-xs uppercase tracking-widest mb-1">
+                  <ImageIcon className="w-4 h-4" />
+                  <span>Галерея воспоминаний</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+                  <span>Фотографии в галерее</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-xs font-semibold border border-rose-500/30">
+                    {photos.length} шт.
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Здесь вы можете загрузить новые фото, удалить лишние, настроить подписи и перемешать порядок.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  onClick={handleShufflePhotos}
+                  disabled={shuffling || photos.length < 2}
+                  className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-2 transition-all disabled:opacity-50"
+                  title="Случайно перемешать порядок фотографий"
+                >
+                  <Shuffle className={`w-4 h-4 ${shuffling ? 'animate-spin' : ''}`} />
+                  <span>{shuffling ? 'Перемешиваю...' : 'Перемешать (Шафл 🔀)'}</span>
+                </button>
+
+                <label className="px-4 py-2.5 bg-rose-500 hover:bg-rose-600 text-white font-semibold text-xs rounded-xl shadow-lg shadow-rose-500/20 flex items-center gap-2 transition-all cursor-pointer">
+                  {uploading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Загрузка...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      <span>Загрузить фото</span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={handleUploadPhotos}
+                    disabled={uploading}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* Drag & Drop Upload Zone */}
+            <label className="border-2 border-dashed border-slate-700 hover:border-rose-500/60 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer bg-slate-950/40 hover:bg-slate-950/70 transition-all text-center group">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 text-rose-400 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                <Upload className="w-6 h-6" />
+              </div>
+              <p className="text-sm font-semibold text-slate-200">
+                Нажмите или перетащите сюда новые фотографии
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                Поддерживаются JPG, PNG, WEBP (можно выбрать сразу несколько файлов)
+              </p>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={handleUploadPhotos}
+                disabled={uploading}
+                className="hidden"
+              />
+            </label>
+
+            {/* Photos Grid */}
+            {photos.length === 0 ? (
+              <div className="p-12 text-center bg-slate-950/60 rounded-2xl border border-slate-800">
+                <ImageIcon className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+                <p className="text-sm font-semibold text-slate-300">В галерее пока нет фото</p>
+                <p className="text-xs text-slate-500 mt-1">Загрузите фотографии, нажав на кнопку выше.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {photos.map((photo, idx) => (
+                  <div
+                    key={photo.id}
+                    className="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden flex flex-col justify-between group hover:border-slate-700 transition-colors shadow-md"
+                  >
+                    {/* Image Preview & Overlay Tools */}
+                    <div className="relative aspect-[3/4] w-full bg-slate-900 overflow-hidden">
+                      <img
+                        src={photo.src}
+                        alt={photo.caption}
+                        loading="lazy"
+                        className="w-full h-full object-cover"
+                      />
+
+                      {/* Top Overlay Badge & Action Buttons */}
+                      <div className="absolute top-2 inset-x-2 flex items-center justify-between pointer-events-none">
+                        <span className="px-2 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-white text-[11px] font-mono font-bold pointer-events-auto">
+                          #{idx + 1}
+                        </span>
+
+                        <div className="flex items-center gap-1 pointer-events-auto">
+                          {/* Move left */}
+                          <button
+                            onClick={() => handleMovePhoto(idx, 'left')}
+                            disabled={idx === 0}
+                            title="Сдвинуть влево"
+                            className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Move right */}
+                          <button
+                            onClick={() => handleMovePhoto(idx, 'right')}
+                            disabled={idx === photos.length - 1}
+                            title="Сдвинуть вправо"
+                            className="p-1.5 rounded-lg bg-black/60 hover:bg-black/80 text-white disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Delete Button */}
+                          <button
+                            onClick={() => handleDeletePhoto(photo.id)}
+                            title="Удалить фотографию"
+                            className="p-1.5 rounded-lg bg-rose-600/80 hover:bg-rose-600 text-white transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Caption Input */}
+                    <div className="p-3 bg-slate-900 border-t border-slate-800">
+                      <label className="block text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1">
+                        Подпись к фото:
+                      </label>
+                      <input
+                        type="text"
+                        value={photo.caption}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPhotos((prev) =>
+                            prev.map((p) => (p.id === photo.id ? { ...p, caption: val } : p))
+                          );
+                        }}
+                        onBlur={(e) => handleUpdateCaption(photo.id, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleUpdateCaption(photo.id, (e.target as HTMLInputElement).value);
+                            (e.target as HTMLInputElement).blur();
+                          }
+                        }}
+                        placeholder="Напишите романтическую подпись..."
+                        className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:ring-1 focus:ring-rose-500 font-medium"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

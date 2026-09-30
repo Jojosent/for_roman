@@ -1,20 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, Sparkles, X, ChevronLeft, ChevronRight, Maximize2 } from 'lucide-react';
 import { playCuteChime } from './AmbientSound';
+import { PhotoItem } from '@/lib/types';
 
-interface PhotoItem {
-  id: number;
-  src: string;
-  caption: string;
-  category?: string;
-  rotation?: number;
-}
-
-// Romantic captions for the 28 photos
-const captions = [
+const defaultCaptions = [
   "Твоя улыбка делает любой день лучше ✨",
   "Один из моих любимых моментов с тобой",
   "Невероятно красивая и нежная 🌸",
@@ -45,23 +37,35 @@ const captions = [
   "Жду нашу следующую встречу с нетерпением!",
 ];
 
-const totalPhotos = 28;
-const photos: PhotoItem[] = Array.from({ length: totalPhotos }, (_, i) => ({
-  id: i + 1,
+const initialDefaultPhotos: PhotoItem[] = Array.from({ length: 28 }, (_, i) => ({
+  id: `photo-${i + 1}`,
   src: `/photos/photo-${i + 1}.jpg`,
-  caption: captions[i % captions.length],
+  caption: defaultCaptions[i % defaultCaptions.length],
   rotation: ((i % 5) - 2) * 1.5,
 }));
 
 export default function PhotoMemories() {
+  const [photos, setPhotos] = useState<PhotoItem[]>(initialDefaultPhotos);
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoItem | null>(null);
-  const [likes, setLikes] = useState<Record<number, boolean>>({});
+  const [likes, setLikes] = useState<Record<string, boolean>>({});
   const [likeCount, setLikeCount] = useState<number>(0);
-  const [burstHeart, setBurstHeart] = useState<{ id: number; key: number } | null>(null);
-  const [viewMode, setViewMode] = useState<'grid' | 'carousel'>('grid');
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [burstHeart, setBurstHeart] = useState<{ id: string; key: number } | null>(null);
 
-  const toggleLike = (e: React.MouseEvent, id: number) => {
+  // Fetch dynamic photos from API (shuffled order, uploads, custom captions)
+  useEffect(() => {
+    fetch('/api/photos')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.photos) && data.photos.length > 0) {
+          setPhotos(data.photos);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch photos, using defaults:', err);
+      });
+  }, []);
+
+  const toggleLike = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     playCuteChime();
     setLikes((prev) => {
@@ -78,17 +82,21 @@ export default function PhotoMemories() {
 
   const handleNextPhoto = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (!selectedPhoto) return;
-    const nextIdx = (selectedPhoto.id % totalPhotos);
+    if (!selectedPhoto || photos.length === 0) return;
+    const currentIdx = photos.findIndex((p) => p.id === selectedPhoto.id);
+    const nextIdx = (currentIdx + 1) % photos.length;
     setSelectedPhoto(photos[nextIdx]);
   };
 
   const handlePrevPhoto = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (!selectedPhoto) return;
-    const prevIdx = (selectedPhoto.id - 2 + totalPhotos) % totalPhotos;
+    if (!selectedPhoto || photos.length === 0) return;
+    const currentIdx = photos.findIndex((p) => p.id === selectedPhoto.id);
+    const prevIdx = (currentIdx - 1 + photos.length) % photos.length;
     setSelectedPhoto(photos[prevIdx]);
   };
+
+  const selectedIndex = selectedPhoto ? photos.findIndex((p) => p.id === selectedPhoto.id) + 1 : 0;
 
   return (
     <div className="w-full max-w-5xl mx-auto px-4 py-12 relative">
@@ -96,7 +104,7 @@ export default function PhotoMemories() {
       <div className="text-center mb-8">
         <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-rose-100 text-rose-700 text-xs sm:text-sm font-semibold tracking-wide border border-rose-200 shadow-sm">
           <Sparkles className="w-4 h-4 text-rose-500" />
-          Галерея приятных воспоминаний
+          Галерея приятных воспоминаний ({photos.length})
         </span>
         <h2 className="text-2xl sm:text-4xl font-serif font-bold text-rose-950 mt-3">
           Каждый миг с тобой — особенный
@@ -120,14 +128,14 @@ export default function PhotoMemories() {
 
       {/* Grid of Polaroid Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-6">
-        {photos.map((photo) => {
+        {photos.map((photo, index) => {
           const isLiked = !!likes[photo.id];
           return (
             <motion.div
-              key={photo.id}
+              key={photo.id || index}
               whileHover={{ scale: 1.03, y: -4, rotate: 0 }}
               whileTap={{ scale: 0.98 }}
-              style={{ rotate: `${photo.rotation}deg` }}
+              style={{ rotate: `${photo.rotation || 0}deg` }}
               onClick={() => setSelectedPhoto(photo)}
               className="group relative bg-white p-3 pb-4 rounded-xl shadow-md hover:shadow-xl hover:shadow-rose-100 transition-all duration-300 border border-rose-100 flex flex-col cursor-pointer"
             >
@@ -135,7 +143,7 @@ export default function PhotoMemories() {
               <div className="relative aspect-[3/4] w-full rounded-lg overflow-hidden bg-rose-50">
                 <img
                   src={photo.src}
-                  alt={`Фото ${photo.id}`}
+                  alt={photo.caption || 'Фото'}
                   loading="lazy"
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
@@ -226,7 +234,7 @@ export default function PhotoMemories() {
               <div className="relative w-full max-h-[65vh] rounded-xl overflow-hidden bg-rose-50 flex items-center justify-center">
                 <img
                   src={selectedPhoto.src}
-                  alt={`Фото ${selectedPhoto.id}`}
+                  alt={selectedPhoto.caption || 'Фото'}
                   className="max-h-[65vh] w-auto object-contain rounded-lg"
                 />
               </div>
@@ -253,7 +261,7 @@ export default function PhotoMemories() {
               </div>
 
               <div className="w-full text-right text-xs text-rose-400 mt-2 px-2">
-                Фото {selectedPhoto.id} из {totalPhotos}
+                Фото {selectedIndex} из {photos.length}
               </div>
             </motion.div>
           </motion.div>

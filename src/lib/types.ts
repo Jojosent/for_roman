@@ -1,3 +1,10 @@
+export interface PhotoItem {
+  id: string;
+  src: string;
+  caption: string;
+  rotation?: number;
+}
+
 export interface ActivityOption {
   id: string;
   title: string;
